@@ -17,9 +17,9 @@
 #include <cstdlib>
 #include <stdexcept>
 #include <iostream>
-#include "HelloTriangleApp.h"
+//#include "HelloTriangleApp.h"
 
-//import Renderer;
+import Renderer;
 
 
 int main() {

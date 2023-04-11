@@ -153,12 +153,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="HelloTriangleApp.cpp" />
     <ClCompile Include="Renderer.ixx" />
     <ClCompile Include="VulkanGame.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="HelloTriangleApp.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

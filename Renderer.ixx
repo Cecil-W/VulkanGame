@@ -334,27 +334,24 @@ void HelloTriangleApplication::pickPhysicalDevice() {
 
 bool HelloTriangleApplication::isDeviceSuitable(VkPhysicalDevice device) {
 	VkPhysicalDeviceProperties deviceProperties;
-	VkPhysicalDeviceFeatures deviceFeatures;
 	vkGetPhysicalDeviceProperties(device, &deviceProperties);
+	VkPhysicalDeviceFeatures deviceFeatures;
 	vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
 
-	bool isSuitable;
-	isSuitable = deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && deviceFeatures.geometryShader;
-
-	QueueFamilyIndices inidices = findQueueFamilies(device);
-
-	bool extensionsSupported = checkDeviceExtensionSupport(device);
-
-	bool swapChainAdequate = false;
-	if (extensionsSupported) {
-		SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device);
-		swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
+	
+	if (!(deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) || !deviceFeatures.geometryShader) {
+		return false;
 	}
 
-	isSuitable = isSuitable && inidices.is_complete() && extensionsSupported && swapChainAdequate;
+	QueueFamilyIndices indices = findQueueFamilies(device);
+	if (indices.is_complete() == false) return false;
 
+	if (checkDeviceExtensionSupport(device) == false) return false;
 
-	return isSuitable;
+	SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device);
+	if (swapChainSupport.formats.empty() || swapChainSupport.presentModes.empty()) return false;	
+
+	return true;
 }
 
 

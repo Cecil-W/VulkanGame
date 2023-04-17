@@ -21,13 +21,13 @@
     <ClCompile Include="Renderer.ixx">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="HelloTriangleApp.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="HelloTriangleApp.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
+    <None Include="shaders\shader.vert">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="shaders\shader.frag">
+      <Filter>Source Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

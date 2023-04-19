@@ -20,6 +20,7 @@ import <cstdint>;
 import <limits>;
 import <algorithm>;
 import <fstream>;
+import <limits>;
 
 
 
@@ -96,6 +97,11 @@ private:
 	VkPipelineLayout m_pipelineLayout;
 	VkPipeline m_graphicsPipeline;
 	std::vector<VkFramebuffer> m_swapChainFramebuffers;
+	VkCommandPool m_commandPool;
+	VkCommandBuffer m_commandBuffer;
+	VkSemaphore m_imageAvailableSemaphore;
+	VkSemaphore m_renderFinishedSemaphore;
+	VkFence m_inFlightFence;
 
 
 	void initWindow(const int width, const int height);
@@ -167,6 +173,16 @@ private:
 	void createRenderPass();
 
 	void createFrameBuffers();
+
+	void createCommandPool();
+
+	void createCommandBuffer();
+
+	void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+
+	void drawFrame();
+
+	void createSyncObjects();
 };
 
 
@@ -203,6 +219,9 @@ void HelloTriangleApplication::initVulkan() {
 	createRenderPass();
 	createGraphicsPipeline();
 	createFrameBuffers();
+	createCommandPool();
+	createCommandBuffer();
+	createSyncObjects();
 }
 
 void HelloTriangleApplication::createSwapChain() {
@@ -260,11 +279,20 @@ void HelloTriangleApplication::createSwapChain() {
 void HelloTriangleApplication::mainLoop() {
 	while (!glfwWindowShouldClose(m_window)) {
 		glfwPollEvents();
+		drawFrame();
 	}
+
+	vkDeviceWaitIdle(m_device);
 }
 
 
 void HelloTriangleApplication::cleanup() {
+	vkDestroySemaphore(m_device, m_imageAvailableSemaphore, nullptr);
+	vkDestroySemaphore(m_device, m_renderFinishedSemaphore, nullptr);
+	vkDestroyFence(m_device, m_inFlightFence, nullptr);
+
+	vkDestroyCommandPool(m_device, m_commandPool, nullptr);
+
 	for (auto framebuffer : m_swapChainFramebuffers) {
 		vkDestroyFramebuffer(m_device, framebuffer, nullptr);
 	}
@@ -793,17 +821,26 @@ void HelloTriangleApplication::createRenderPass() {
 	subpass.colorAttachmentCount = 1;
 	subpass.pColorAttachments = &colorAttachmentRef;
 
+	VkSubpassDependency subpassDependency{};
+	subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+	subpassDependency.dstSubpass = 0;
+	subpassDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	subpassDependency.srcAccessMask = 0;
+	subpassDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	subpassDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
 	VkRenderPassCreateInfo renderPassInfo{};
 	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
 	renderPassInfo.attachmentCount = 1;
 	renderPassInfo.pAttachments = &colorAttachment;
 	renderPassInfo.subpassCount = 1;
 	renderPassInfo.pSubpasses = &subpass;
+	renderPassInfo.dependencyCount = 1;
+	renderPassInfo.pDependencies = &subpassDependency;
 
 	if (vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS) {
 		throw std::runtime_error("failed to create render pass!");
-	}
-	
+	}	
 }
 
 void HelloTriangleApplication::createFrameBuffers() {
@@ -827,6 +864,133 @@ void HelloTriangleApplication::createFrameBuffers() {
 		}
 	}
 }
+
+void HelloTriangleApplication::createCommandPool() {
+	QueueFamilyIndices queueFamilyIndices = findQueueFamilies(m_physicalDevice);
+
+	VkCommandPoolCreateInfo poolInfo{};
+	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+
+	if (vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_commandPool) != VK_SUCCESS) {
+		throw std::runtime_error("failed to create Command Pool!");
+	}
+}
+
+void HelloTriangleApplication::createCommandBuffer() {
+	VkCommandBufferAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.commandPool = m_commandPool;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandBufferCount = 1;
+
+	if (vkAllocateCommandBuffers(m_device, &allocInfo, &m_commandBuffer) != VK_SUCCESS) {
+		throw std::runtime_error("failed to allocate command buffers!");
+	}
+}
+
+void HelloTriangleApplication::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+	VkCommandBufferBeginInfo beginInfo{};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+	if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+		throw std::runtime_error("failed to begin recording command buffer!");
+	}
+
+	VkRenderPassBeginInfo renderPassInfo{};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	renderPassInfo.renderPass = m_renderPass;
+	renderPassInfo.framebuffer = m_swapChainFramebuffers[imageIndex];
+	renderPassInfo.renderArea.offset = { 0, 0 };
+	renderPassInfo.renderArea.extent = m_swapChainExtent;
+	renderPassInfo.clearValueCount = 1;
+	VkClearValue clearColor = { {{0.0f, 0.0f, 0.0f, 1.0f}} };
+	renderPassInfo.pClearValues = &clearColor;
+
+	vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
+
+	VkViewport viewport{};
+	viewport.x = 0.0f;
+	viewport.y = 0.0f;
+	viewport.width = static_cast<float>(m_swapChainExtent.width);
+	viewport.height = static_cast<float>(m_swapChainExtent.height);
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+	vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+	VkRect2D scissor{};
+	scissor.offset = { 0, 0 };
+	scissor.extent = m_swapChainExtent;
+	vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+	vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+
+	vkCmdEndRenderPass(commandBuffer);
+
+	if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+		throw std::runtime_error("failed to record command buffer!");
+	}
+}
+
+void HelloTriangleApplication::drawFrame() {
+	vkWaitForFences(m_device, 1, &m_inFlightFence, VK_TRUE, std::numeric_limits<uint64_t>::max());
+	vkResetFences(m_device, 1, &m_inFlightFence);
+
+	uint32_t imageIndex;
+	vkAcquireNextImageKHR(m_device, m_swapChain, std::numeric_limits<uint64_t>::max(), m_imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+
+	vkResetCommandBuffer(m_commandBuffer, 0);
+
+	recordCommandBuffer(m_commandBuffer, imageIndex);
+
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	VkSemaphore waitSemaphores[] = { m_imageAvailableSemaphore };
+	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+	submitInfo.waitSemaphoreCount = 1;
+	submitInfo.pWaitSemaphores = waitSemaphores;
+	submitInfo.pWaitDstStageMask = waitStages;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &m_commandBuffer;
+	VkSemaphore signalSemaphores[] = { m_renderFinishedSemaphore };
+	submitInfo.signalSemaphoreCount = 1;
+	submitInfo.pSignalSemaphores = signalSemaphores;
+
+	if (vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFence) != VK_SUCCESS) {
+		throw std::runtime_error("failed to submit draw command buffer!");
+	}
+
+	VkPresentInfoKHR presentInfo{};
+	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	presentInfo.waitSemaphoreCount = 1;
+	presentInfo.pWaitSemaphores = signalSemaphores;
+	VkSwapchainKHR swapChains[] = { m_swapChain };
+	presentInfo.swapchainCount = 1;
+	presentInfo.pSwapchains = swapChains;
+	presentInfo.pImageIndices = &imageIndex;
+
+	vkQueuePresentKHR(m_presentQueue, &presentInfo);
+}
+
+void HelloTriangleApplication::createSyncObjects() {
+	VkSemaphoreCreateInfo semaphoreInfo{};
+	semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+	VkFenceCreateInfo fenceInfo{};
+	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+	if (vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_imageAvailableSemaphore) != VK_SUCCESS ||
+		vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_renderFinishedSemaphore) != VK_SUCCESS ||
+		vkCreateFence(m_device, &fenceInfo, nullptr, &m_inFlightFence) != VK_SUCCESS) {
+		throw std::runtime_error("failed to create semaphores!");
+	}
+}
+
+
 
 VkShaderModule HelloTriangleApplication::createShaderModule(const std::vector<char>& code) {
 	VkShaderModuleCreateInfo createInfo{};

@@ -224,7 +224,7 @@ private:
 	void createSyncObjects();
 
 	void recreateSwapChain();
-	
+
 	void cleanupSwapChain();
 
 	static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
@@ -232,6 +232,8 @@ private:
 	void createVertexBuffer();
 
 	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
+	void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
 };
 
 
@@ -278,7 +280,7 @@ void HelloTriangleApplication::initVulkan() {
 
 void HelloTriangleApplication::createSwapChain() {
 	SwapChainSupportDetails swapChainSupport = querySwapChainSupport(m_physicalDevice);
-	
+
 	VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
 	VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
 	VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
@@ -319,7 +321,7 @@ void HelloTriangleApplication::createSwapChain() {
 
 	if (vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapChain) != VK_SUCCESS) {
 		throw std::runtime_error("failed to create swap chain!");
-	 }
+	}
 
 	vkGetSwapchainImagesKHR(m_device, m_swapChain, &imageCount, nullptr);
 	m_swapChainImages.resize(imageCount);
@@ -519,7 +521,7 @@ bool HelloTriangleApplication::isDeviceSuitable(VkPhysicalDevice device) {
 	VkPhysicalDeviceFeatures deviceFeatures;
 	vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
 
-	
+
 	if (!(deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) || !deviceFeatures.geometryShader) {
 		return false;
 	}
@@ -530,7 +532,7 @@ bool HelloTriangleApplication::isDeviceSuitable(VkPhysicalDevice device) {
 	if (checkDeviceExtensionSupport(device) == false) return false;
 
 	SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device);
-	if (swapChainSupport.formats.empty() || swapChainSupport.presentModes.empty()) return false;	
+	if (swapChainSupport.formats.empty() || swapChainSupport.presentModes.empty()) return false;
 
 	return true;
 }
@@ -619,7 +621,7 @@ void HelloTriangleApplication::createSurface() {
 bool HelloTriangleApplication::checkDeviceExtensionSupport(VkPhysicalDevice device) {
 	uint32_t extensionsCount;
 	vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionsCount, nullptr);
-	
+
 	std::vector<VkExtensionProperties> availableExtensions(extensionsCount);
 	vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionsCount, availableExtensions.data());
 
@@ -671,14 +673,15 @@ VkPresentModeKHR HelloTriangleApplication::chooseSwapPresentMode(const std::vect
 			return availablePresentMode;
 		}
 	}
-	
+
 	return VK_PRESENT_MODE_FIFO_KHR;
 }
 
 VkExtent2D HelloTriangleApplication::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
 	if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
 		return capabilities.currentExtent;
-	} else {
+	}
+	else {
 		int width, height;
 		glfwGetFramebufferSize(m_window, &width, &height);
 
@@ -766,7 +769,7 @@ void HelloTriangleApplication::createGraphicsPipeline() {
 	VkPipelineDynamicStateCreateInfo dynamicState{};
 	dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
 	dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-	dynamicState.pDynamicStates = dynamicStates.data();	
+	dynamicState.pDynamicStates = dynamicStates.data();
 
 	VkPipelineRasterizationStateCreateInfo rasterizer{};
 	rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -892,7 +895,7 @@ void HelloTriangleApplication::createRenderPass() {
 
 	if (vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS) {
 		throw std::runtime_error("failed to create render pass!");
-	}	
+	}
 }
 
 void HelloTriangleApplication::createFrameBuffers() {
@@ -900,7 +903,7 @@ void HelloTriangleApplication::createFrameBuffers() {
 	m_swapChainFramebuffers.resize(swapChainImageCount);
 
 	for (size_t i = 0; i < swapChainImageCount; i++) {
-		VkImageView attachments[] = {m_swapChainImageViews[i]};
+		VkImageView attachments[] = { m_swapChainImageViews[i] };
 
 		VkFramebufferCreateInfo framebufferInfo{};
 		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -937,7 +940,7 @@ void HelloTriangleApplication::createCommandBuffers() {
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocInfo.commandPool = m_commandPool;
 	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocInfo.commandBufferCount = (uint32_t) m_commandBuffers.size();
+	allocInfo.commandBufferCount = (uint32_t)m_commandBuffers.size();
 
 	if (vkAllocateCommandBuffers(m_device, &allocInfo, m_commandBuffers.data()) != VK_SUCCESS) {
 		throw std::runtime_error("failed to allocate command buffers!");
@@ -1119,7 +1122,7 @@ void HelloTriangleApplication::createVertexBuffer() {
 	if (vkCreateBuffer(m_device, &bufferInfo, nullptr, &m_vertexBuffer) != VK_SUCCESS) {
 		throw std::runtime_error("failed to create vertex buffer!");
 	}
-	
+
 	VkMemoryRequirements memRequirements;
 	vkGetBufferMemoryRequirements(m_device, m_vertexBuffer, &memRequirements);
 
@@ -1136,7 +1139,7 @@ void HelloTriangleApplication::createVertexBuffer() {
 
 	void* data;
 	vkMapMemory(m_device, m_vertexBufferMemory, 0, bufferInfo.size, 0, &data);
-	memcpy(data, vertices.data(), (size_t) bufferInfo.size);
+	memcpy(data, vertices.data(), (size_t)bufferInfo.size);
 	vkUnmapMemory(m_device, m_vertexBufferMemory);
 }
 
@@ -1159,7 +1162,7 @@ VkShaderModule HelloTriangleApplication::createShaderModule(const std::vector<ch
 uint32_t HelloTriangleApplication::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
 	VkPhysicalDeviceMemoryProperties memProperties;
 	vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &memProperties);
-	
+
 	for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
 		if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
 			return i;
@@ -1169,4 +1172,6 @@ uint32_t HelloTriangleApplication::findMemoryType(uint32_t typeFilter, VkMemoryP
 	throw std::runtime_error("failed to find suitable memory type!");
 }
 
+void HelloTriangleApplication::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
 
+}

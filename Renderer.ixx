@@ -2,28 +2,20 @@ module;
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-
-
-
-
-#include <iostream>
-#include <stdexcept>
-#include <vector>
-#include <cstring>
-#include <cstdlib>
 #include <glm/glm.hpp>
+#include <string.h>
 
 export module Renderer;
 
-
-import <optional>;
-import <set>;
-import <cstdint>;
-import <limits>;
-import <algorithm>;
-import <fstream>;
-import <limits>;
-import <array>;
+import std;
+//import <optional>;
+//import <set>;
+//import <cstdint>;
+//import <limits>;
+//import <algorithm>;
+//import <fstream>;
+//import <limits>;
+//import <array>;
 
 
 
@@ -150,6 +142,9 @@ private:
 	std::vector<VkFence> m_inFlightFences;
 	uint32_t m_currentFrame;
 
+	VkBuffer m_vertexBuffer;
+	VkDeviceMemory m_vertexBufferMemory;
+
 	bool m_framebufferResized = false;
 
 
@@ -233,6 +228,10 @@ private:
 	void cleanupSwapChain();
 
 	static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
+
+	void createVertexBuffer();
+
+	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 };
 
 
@@ -270,7 +269,9 @@ void HelloTriangleApplication::initVulkan() {
 	createRenderPass();
 	createGraphicsPipeline();
 	createFrameBuffers();
+	createVertexBuffer();
 	createCommandPool();
+	createVertexBuffer();
 	createCommandBuffers();
 	createSyncObjects();
 }
@@ -340,6 +341,13 @@ void HelloTriangleApplication::mainLoop() {
 void HelloTriangleApplication::cleanup() {
 	cleanupSwapChain();
 
+	vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
+	vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
+	vkDestroyRenderPass(m_device, m_renderPass, nullptr);
+
+	vkDestroyBuffer(m_device, m_vertexBuffer, nullptr);
+	vkFreeMemory(m_device, m_vertexBufferMemory, nullptr);
+
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 		vkDestroySemaphore(m_device, m_imageAvailableSemaphores[i], nullptr);
 		vkDestroySemaphore(m_device, m_renderFinishedSemaphores[i], nullptr);
@@ -347,10 +355,6 @@ void HelloTriangleApplication::cleanup() {
 	}
 
 	vkDestroyCommandPool(m_device, m_commandPool, nullptr);
-
-	vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
-	vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
-	vkDestroyRenderPass(m_device, m_renderPass, nullptr);
 
 	vkDestroyDevice(m_device, nullptr);
 
@@ -976,7 +980,11 @@ void HelloTriangleApplication::recordCommandBuffer(VkCommandBuffer commandBuffer
 	scissor.extent = m_swapChainExtent;
 	vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-	vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+	VkBuffer vertexBuffers[] = { m_vertexBuffer };
+	VkDeviceSize offsets[] = { 0 };
+	vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+
+	vkCmdDraw(commandBuffer, static_cast<uint32_t>(vertices.size()), 1, 0, 0);
 
 	vkCmdEndRenderPass(commandBuffer);
 
@@ -1101,6 +1109,37 @@ void HelloTriangleApplication::framebufferResizeCallback(GLFWwindow* window, int
 	app->m_framebufferResized = true;
 }
 
+void HelloTriangleApplication::createVertexBuffer() {
+	VkBufferCreateInfo bufferInfo{};
+	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufferInfo.size = sizeof(vertices[0]) * vertices.size();
+	bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	if (vkCreateBuffer(m_device, &bufferInfo, nullptr, &m_vertexBuffer) != VK_SUCCESS) {
+		throw std::runtime_error("failed to create vertex buffer!");
+	}
+	
+	VkMemoryRequirements memRequirements;
+	vkGetBufferMemoryRequirements(m_device, m_vertexBuffer, &memRequirements);
+
+	VkMemoryAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize = memRequirements.size;
+	allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	if (vkAllocateMemory(m_device, &allocInfo, nullptr, &m_vertexBufferMemory) != VK_SUCCESS) {
+		throw std::runtime_error("failed to allocate vertex buffer memory!");
+	}
+
+	vkBindBufferMemory(m_device, m_vertexBuffer, m_vertexBufferMemory, 0);
+
+	void* data;
+	vkMapMemory(m_device, m_vertexBufferMemory, 0, bufferInfo.size, 0, &data);
+	memcpy(data, vertices.data(), (size_t) bufferInfo.size);
+	vkUnmapMemory(m_device, m_vertexBufferMemory);
+}
+
 
 
 VkShaderModule HelloTriangleApplication::createShaderModule(const std::vector<char>& code) {
@@ -1115,6 +1154,19 @@ VkShaderModule HelloTriangleApplication::createShaderModule(const std::vector<ch
 	}
 
 	return shaderModule;
+}
+
+uint32_t HelloTriangleApplication::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+	VkPhysicalDeviceMemoryProperties memProperties;
+	vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &memProperties);
+	
+	for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+		if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+			return i;
+		}
+	}
+
+	throw std::runtime_error("failed to find suitable memory type!");
 }
 
 

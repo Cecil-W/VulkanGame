@@ -14,9 +14,8 @@
 //   6. In the future, to open this project again, go to File > Open > Project and select the .sln file
 
 
-#include <cstdlib>
-#include <stdexcept>
-#include <iostream>
+#include <stdlib.h>
+import std;
 
 import Renderer;
 

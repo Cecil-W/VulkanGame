@@ -173,8 +173,13 @@
     <ClCompile Include="VulkanGame.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include=".gitignore" />
+    <None Include="shaders\compile.bat" />
+    <None Include="shaders\compile.sh" />
+    <None Include="shaders\frag.spv" />
     <None Include="shaders\shader.frag" />
     <None Include="shaders\shader.vert" />
+    <None Include="shaders\vert.spv" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

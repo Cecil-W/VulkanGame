@@ -11,12 +11,16 @@ module;
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
 
 #include <string.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tiny_obj_loader.h>
 
 export module Renderer;
 
@@ -25,6 +29,9 @@ import std;
 /* This is not working in the current visual studio version https://github.com/KhronosGroup/Vulkan-Hpp?tab=readme-ov-file#c20-named-module
 import <vulkan/vulkan_hpp>;
 */
+
+const auto MODEL_PATH = "models/viking_room.obj";
+const auto TEXTURE_PATH = "textures/viking_room.png";
 
 // TODO: i could add the best practice layer
 const std::vector<const char*> validationLayers = {
@@ -85,24 +92,20 @@ struct Vertex {
 
 		return attributeDescriptions;
 	}
+
+	friend bool operator==(const Vertex&, const Vertex&) = default;
 };
 
-const std::vector<Vertex> vertices = {
-	{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-	{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-	{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-	{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
 
-	{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-	{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-	{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-	{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
+template<> struct std::hash<Vertex> {
+	size_t operator()(Vertex const& vertex) const {
+		return ((std::hash<glm::vec3>()(vertex.pos) ^
+			(std::hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
+			(std::hash<glm::vec2>()(vertex.texCoord) << 1);
+	}
 };
 
-const std::vector<uint16_t> vertexIndices = {
-	0, 1, 2, 2, 3, 0,
-	4, 5, 6, 6, 7, 4
-};
+
 
 struct UniformBufferObject {
 	alignas(16)	glm::mat4 model;
@@ -145,6 +148,9 @@ public:
 private:
 	GLFWwindow* m_window;
 	uint32_t m_window_width, m_window_height;
+
+	std::vector<Vertex> vertices;
+	std::vector<uint32_t> vertexIndices;
 
 	VkInstance m_instance;
 	VkDebugUtilsMessengerEXT m_debugMessenger;
@@ -329,6 +335,8 @@ private:
 	void createDepthResources();
 
 	VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features) const;
+
+	void loadModel();
 };
 
 
@@ -371,6 +379,7 @@ void HelloTriangleApplication::initVulkan() {
 	createTextureImage();
 	createTextureImageView();
 	createTextureSampler();
+	loadModel();
 	createVertexBuffer();
 	createIndexBuffer();
 	createUniformBuffers();
@@ -492,8 +501,10 @@ void HelloTriangleApplication::cleanup() {
 
 
 void HelloTriangleApplication::createInstance() {
-	if (enableValidationLayers && !checkValidationLayerSupport()) {
-		throw std::runtime_error("validation layers requested, but not available!");
+	if constexpr (enableValidationLayers) {
+		if (!checkValidationLayerSupport()) {
+			throw std::runtime_error("validation layers requested, but not available!");
+		}
 	}
 
 	VkApplicationInfo appInfo{};
@@ -1115,7 +1126,7 @@ void HelloTriangleApplication::recordCommandBuffer(VkCommandBuffer commandBuffer
 	VkDeviceSize offsets[] = { 0 };
 	vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
 
-	vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+	vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
 	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[m_currentFrame], 0, nullptr);
 
@@ -1415,7 +1426,7 @@ void HelloTriangleApplication::createDescriptorSets() {
 /// loads texture into a buffer and creats the image to transfer into
 void HelloTriangleApplication::createTextureImage() {
 	int texWidth, texHeight, texChannels;
-	stbi_uc* pixels = stbi_load("textures/texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+	stbi_uc* pixels = stbi_load(TEXTURE_PATH, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 	VkDeviceSize imageSize = texWidth * texHeight * 4;
 
 	if (!pixels) {
@@ -1677,6 +1688,42 @@ VkFormat HelloTriangleApplication::findSupportedFormat(const std::vector<VkForma
 	}
 
 	throw std::runtime_error("failed to find supported format!");
+}
+
+void HelloTriangleApplication::loadModel() {
+	tinyobj::attrib_t attrib;
+	std::vector<tinyobj::shape_t> shapes;
+	std::vector<tinyobj::material_t> materials;
+	std::string warn, err;
+
+	if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH)) {
+		throw std::runtime_error(warn + err);
+	}
+
+	std::unordered_map<Vertex, uint32_t> uniqueVertices{};
+
+	for (const auto& shape : shapes) {
+		for (const auto& index : shape.mesh.indices) {
+			Vertex vertex{
+				.pos = {
+					attrib.vertices[3 * index.vertex_index + 0],
+					attrib.vertices[3 * index.vertex_index + 1],
+					attrib.vertices[3 * index.vertex_index + 2]},
+				.color = {1.0f, 1.0f, 1.0f},
+				.texCoord = {
+					attrib.texcoords[2 * index.texcoord_index + 0],
+					1.0f - attrib.texcoords[2 * index.texcoord_index + 1]},
+			};
+
+			if (uniqueVertices.count(vertex) == 0) {
+				uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
+				vertices.push_back(vertex);
+			}
+
+			vertexIndices.push_back(uniqueVertices[vertex]);
+		}
+	}
+
 }
 
 void HelloTriangleApplication::createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags memProperties, VkImage& image, VkDeviceMemory& imageMemory) {

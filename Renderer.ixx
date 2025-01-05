@@ -22,6 +22,10 @@ module;
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_vulkan.h>
+
 export module Renderer;
 
 import std;
@@ -93,7 +97,7 @@ struct Vertex {
 		return attributeDescriptions;
 	}
 
-	friend bool operator==(const Vertex&, const Vertex&) = default;
+	static friend bool operator==(const Vertex&, const Vertex&) = default;
 };
 
 
@@ -120,7 +124,7 @@ const bool enableValidationLayers = true;
 #endif
 
 
-VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger) {
+static VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger) {
 	auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
 	if (func != nullptr) {
 		return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
@@ -137,17 +141,29 @@ void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT
 	}
 }
 
-bool hasStencilComponent(VkFormat format) {
+static bool hasStencilComponent(VkFormat format) {
 	return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
+}
+
+static void check_vk_result(VkResult err)
+{
+	if (err == 0)
+		return;
+	fprintf(stderr, "[vulkan] Error: VkResult = %d\n", err);
+	if (err < 0)
+		abort();
 }
 
 export class HelloTriangleApplication {
 public:
 	void run();
+	HelloTriangleApplication();	
 
 private:
 	GLFWwindow* m_window;
 	uint32_t m_window_width, m_window_height;
+
+	ImGuiIO& io;
 
 	std::vector<Vertex> vertices;
 	std::vector<uint32_t> vertexIndices;
@@ -162,6 +178,8 @@ private:
 	// these two will probably be the same, could test if they are the same because this would be faster (see chapter surface creation)
 	VkQueue m_graphicsQueue;
 	VkQueue m_presentQueue;
+
+	uint32_t m_graphicsQueueIndex;
 
 	VkSwapchainKHR m_swapChain;
 	std::vector<VkImage> m_swapChainImages;
@@ -337,6 +355,8 @@ private:
 	VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features) const;
 
 	void loadModel();
+
+	void initGUI();
 };
 
 
@@ -344,9 +364,12 @@ private:
 void HelloTriangleApplication::run() {
 	initWindow(800, 600);
 	initVulkan();
+	initGUI();
 	mainLoop();
 	cleanup();
 }
+
+HelloTriangleApplication::HelloTriangleApplication() : io((ImGui::CreateContext(), ImGui::GetIO())) {}
 
 void HelloTriangleApplication::initWindow(const int width, const int height) {
 	m_window_width = width;
@@ -444,6 +467,28 @@ void HelloTriangleApplication::createSwapChain() {
 void HelloTriangleApplication::mainLoop() {
 	while (!glfwWindowShouldClose(m_window)) {
 		glfwPollEvents();
+		// Event loop
+
+
+		// (After event loop)
+		// Start the Dear ImGui frame
+
+		ImGui_ImplVulkan_NewFrame();
+		ImGui_ImplGlfw_NewFrame();
+		ImGui::NewFrame();
+		// layout GUI
+		//ImGui::ShowDemoWindow();
+		{
+			ImGui::SetNextWindowPos({ 0,0 });
+			ImGui::Begin("Frame Rate");
+			ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+			ImGui::End();
+		}
+
+
+		// Render GUI
+		ImGui::Render();
+
 		drawFrame();
 	}
 
@@ -452,6 +497,10 @@ void HelloTriangleApplication::mainLoop() {
 
 
 void HelloTriangleApplication::cleanup() {
+	ImGui_ImplVulkan_Shutdown();
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
+
 	cleanupSwapChain();
 
 	vkDestroySampler(m_device, m_textureSampler, nullptr);
@@ -590,9 +639,9 @@ std::vector<const char*> HelloTriangleApplication::getRequiredExtensions() {
 
 VKAPI_ATTR VkBool32 VKAPI_CALL HelloTriangleApplication::debugCallback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-	VkDebugUtilsMessageTypeFlagsEXT messageType,
+	[[maybe_unused]] VkDebugUtilsMessageTypeFlagsEXT messageType,
 	const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-	void* pUserData) {
+	[[maybe_unused]] void* pUserData) {
 
 	if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
 		// Message is important enough to show
@@ -732,8 +781,8 @@ void HelloTriangleApplication::createLogicalDevice() {
 
 	if (vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device) != VK_SUCCESS)
 		throw std::runtime_error("failed to create logical device!");
-
-	vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), 0, &m_graphicsQueue);
+	m_graphicsQueueIndex = indices.graphicsFamily.value();
+	vkGetDeviceQueue(m_device, m_graphicsQueueIndex, 0, &m_graphicsQueue);
 	vkGetDeviceQueue(m_device, indices.presentFamily.value(), 0, &m_presentQueue);
 }
 
@@ -1091,7 +1140,7 @@ void HelloTriangleApplication::recordCommandBuffer(VkCommandBuffer commandBuffer
 		throw std::runtime_error("failed to begin recording command buffer!");
 	}
 
-	std::array<VkClearValue, 2> clearValues; // Note: Order must be the same as the attachments
+	std::array<VkClearValue, 2> clearValues{}; // Note: Order must be the same as the attachments
 	clearValues[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
 	clearValues[1].depthStencil = { 1.0f, 0 };
 
@@ -1131,6 +1180,9 @@ void HelloTriangleApplication::recordCommandBuffer(VkCommandBuffer commandBuffer
 	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[m_currentFrame], 0, nullptr);
 
 	vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(vertexIndices.size()), 1, 0, 0, 0);
+
+	// Record DrawData into commandbuffer after we called drawIndexed
+	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 
 	vkCmdEndRenderPass(commandBuffer);
 
@@ -1257,7 +1309,7 @@ void HelloTriangleApplication::cleanupSwapChain() {
 	vkDestroySwapchainKHR(m_device, m_swapChain, nullptr);
 }
 
-void HelloTriangleApplication::framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+void HelloTriangleApplication::framebufferResizeCallback(GLFWwindow* window, [[maybe_unused]] int width, [[maybe_unused]] int height) {
 	auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
 	app->m_framebufferResized = true;
 }
@@ -1700,6 +1752,7 @@ void HelloTriangleApplication::loadModel() {
 		throw std::runtime_error(warn + err);
 	}
 
+	// stores the index in the vertices member variable of every unique vertex
 	std::unordered_map<Vertex, uint32_t> uniqueVertices{};
 
 	for (const auto& shape : shapes) {
@@ -1726,8 +1779,35 @@ void HelloTriangleApplication::loadModel() {
 
 }
 
+void HelloTriangleApplication::initGUI() {
+	// Moved the context creation into the constructor, so i can make the io a member ref variable
+	//ImGui::CreateContext();
+	//io = &ImGui::GetIO();
+	
+	// Setup fonts, style etc
+
+	auto queueFamilyIndices = findQueueFamilies(m_physicalDevice);
+	ImGui_ImplGlfw_InitForVulkan(m_window, true);
+	ImGui_ImplVulkan_InitInfo initInfo{
+		.Instance = m_instance,
+		.PhysicalDevice = m_physicalDevice,
+		.Device = m_device,
+		.QueueFamily = queueFamilyIndices.graphicsFamily.value(),
+		.Queue = m_graphicsQueue,
+		//.DescriptorPool = m_descriptorPool, // TODO adapt size to acomodate imgui, see struct definition or examples for needed size
+		.RenderPass = m_renderPass,
+		.MinImageCount = MAX_FRAMES_IN_FLIGHT,
+		.ImageCount = MAX_FRAMES_IN_FLIGHT,
+		//.MSAASamples = , // adapted this when i implement MSAA
+		.DescriptorPoolSize = 5, // This causes ImGui to create and handle its own descriptor pool
+		.CheckVkResultFn = check_vk_result,
+	};
+
+	ImGui_ImplVulkan_Init(&initInfo);
+	ImGui_ImplVulkan_CreateFontsTexture();
+}
+
 void HelloTriangleApplication::createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags memProperties, VkImage& image, VkDeviceMemory& imageMemory) {
-	// part 2: create image buffer and transfer texture from buffer to it
 	VkImageCreateInfo imageInfo{};
 	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imageInfo.imageType = VK_IMAGE_TYPE_2D;

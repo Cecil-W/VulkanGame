@@ -1,5 +1,15 @@
 module;
 
+// import std; is currently not yet supported in cmake
+#include <atomic>
+#include <optional>
+#include <iostream>
+#include <vector>
+#include <chrono>
+#include <stdexcept>
+#include <string>
+#include <cstdio>
+
 //#include <vulkan/vulkan.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -14,21 +24,19 @@ module;
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
 
-#include <string.h>
-
 #define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
+#include "stb_image.h"
 
 #define TINYOBJLOADER_IMPLEMENTATION
-#include <tiny_obj_loader.h>
+#include "tiny_obj_loader.h"
 
-#include <imgui.h>
+#include "imgui/imgui.h"
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
 
 export module Renderer;
 
-import std;
+
 
 /* This is not working in the current visual studio version https://github.com/KhronosGroup/Vulkan-Hpp?tab=readme-ov-file#c20-named-module
 import <vulkan/vulkan_hpp>;
@@ -97,7 +105,7 @@ struct Vertex {
 		return attributeDescriptions;
 	}
 
-	static friend bool operator==(const Vertex&, const Vertex&) = default;
+	friend bool operator==(const Vertex&, const Vertex&) = default;
 };
 
 
@@ -290,7 +298,7 @@ private:
 
 	VkShaderModule createShaderModule(const std::vector<char>& code);
 
-	static std::vector<char> readFile(const std::string& filename);
+	static std::vector<char> readFile(const char* filename);
 
 	void createRenderPass();
 
@@ -1050,10 +1058,10 @@ void HelloTriangleApplication::createGraphicsPipeline() {
 	vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
 }
 
-std::vector<char> HelloTriangleApplication::readFile(const std::string& filename) {
+std::vector<char> HelloTriangleApplication::readFile(const char* filename) {
 	std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
-	if (!file.is_open()) throw std::runtime_error("failed to open file!");
+	if (!file.is_open()) throw std::runtime_error(std::format("failed to open file! Name: {0}", filename));
 
 
 	size_t fileSize = (size_t)file.tellg();

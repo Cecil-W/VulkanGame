@@ -15,7 +15,7 @@
 
 
 #include <stdlib.h>
-import std;
+#include <iostream>
 
 import Renderer;
 
